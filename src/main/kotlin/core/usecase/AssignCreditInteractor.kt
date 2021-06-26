@@ -13,27 +13,27 @@ private val MESSAGE_SELF_ASSIGN_WARNING = BotMessage(
 class AssignCreditInteractor(private val assignmentsRepo: ICreditAssignmentRepository) {
 
     @Throws(AssignCreditException::class)
-    fun assignPositive(chatId: ChatId, assignerId: UserId, assigneeId: UserId): BotMessage? {
-        return assignCredit(chatId, assignerId, assigneeId, POSITIVE_CREDIT)
+    fun assignPositive(chatId: ChatId, assignee: User, assignerId: UserId): BotMessage? {
+        return assignCredit(chatId, assignee, assignerId, POSITIVE_CREDIT)
     }
 
     @Throws(AssignCreditException::class)
-    fun assignNegative(chatId: ChatId,  assignerId: UserId, assigneeId: UserId): BotMessage? {
-        return assignCredit(chatId, assignerId, assigneeId, NEGATIVE_CREDIT)
+    fun assignNegative(chatId: ChatId, assignee: User, assignerId: UserId): BotMessage? {
+        return assignCredit(chatId, assignee, assignerId, NEGATIVE_CREDIT)
     }
 
     @Throws(AssignCreditException::class)
-    private fun assignCredit(chatId: ChatId, assignerId: UserId, assigneeId: UserId, value: CreditValue): BotMessage? {
+    private fun assignCredit(chatId: ChatId, assignee: User, assignerId: UserId, value: CreditValue): BotMessage? {
         var valueToAssign = value
         var resultMessage: BotMessage? = null
-        if (assignerId == assigneeId) {
+        if (assignerId == assignee.userId) {
             valueToAssign = NEGATIVE_CREDIT
             resultMessage = MESSAGE_SELF_ASSIGN_WARNING
         }
         try {
-            assignmentsRepo.addAssignment(CreditAssignment(chatId, assigneeId, valueToAssign))
+            assignmentsRepo.addAssignment(CreditAssignment(chatId, assignee, valueToAssign))
         } catch (e: CreditAssignmentRepositoryException) {
-            throw AssignCreditException("Failed to assign credit in chat $chatId to user $assigneeId by $assignerId", e)
+            throw AssignCreditException("Failed to assign credit in chat $chatId to user ${assignee.userId} by $assignerId", e)
         }
         return resultMessage
     }

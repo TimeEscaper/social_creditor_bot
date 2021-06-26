@@ -1,6 +1,7 @@
 package entrypoint.bot
 
 import core.domain.ChatId
+import core.domain.User
 import core.domain.UserId
 import core.usecase.AssignCreditException
 import core.usecase.AssignCreditInteractor
@@ -36,7 +37,11 @@ private const val MESSAGE_NO_DATA = "Seems that there were not any credit assign
 private const val COMMAND_GET_CREDITS = "credits"
 private const val COMMAND_HEALTHCHECK = "healthcheck"
 
-data class FilteredMessage(val chatId: Long, val senderUserId: Long, val replyToUserId: Long, val isPositive: Boolean)
+data class FilteredMessage(val chatId: Long,
+                           val senderUserId: Long,
+                           val replyToUserId: Long,
+                           val replyToUserName: String,
+                           val isPositive: Boolean)
 
 fun parseArgs(args: Array<out String>): Pair<String, String> {
     if (args.size != 4)
@@ -80,6 +85,10 @@ fun filterCreditAssignMessage(message: Message): FilteredMessage? {
     if (replyToUserMessage.user.asBot() != null)
         return null
     val replyToUserId = replyToUserMessage.user.id.chatId
+    var replyToUserName = "${replyToUserMessage.user.firstName} ${replyToUserMessage.user.lastName}"
+    if (replyToUserMessage.user.username != null) {
+        replyToUserName += " (${replyToUserMessage.user.username?.username})"
+    }
 
     // Check if message includes any sticker
     if (groupMessage.content !is StickerContent)
@@ -94,7 +103,8 @@ fun filterCreditAssignMessage(message: Message): FilteredMessage? {
     if (stickerId != STICKER_PLUS_20 && stickerId != STICKER_MINUS_20)
         return null
 
-    return FilteredMessage(message.chat.id.chatId, senderUserId, replyToUserId, stickerId == STICKER_PLUS_20)
+    return FilteredMessage(message.chat.id.chatId, senderUserId,
+        replyToUserId, replyToUserName, stickerId == STICKER_PLUS_20)
 }
 
 suspend fun main(vararg args: String) {
@@ -125,7 +135,7 @@ suspend fun main(vararg args: String) {
                 bot.reply(message, MESSAGE_NO_DATA)
                 return@onCommand
             }
-            val responseMessage = credits.map { "${it.key.id}: ${it.value.value} credits" }.joinToString("\n")
+            val responseMessage = credits.map { "${it.key.name}: ${it.value.value} credits" }.joinToString("\n")
             bot.reply(message, responseMessage)
         }
         onCommand(COMMAND_HEALTHCHECK.toRegex()) { message ->
@@ -136,11 +146,12 @@ suspend fun main(vararg args: String) {
             val responseMessage = try {
                 if (message.isPositive)
                     assignInteractor.assignPositive(
-                        ChatId(message.chatId), UserId(message.senderUserId), UserId(message.replyToUserId)
-                    )
+                        ChatId(message.chatId), User(UserId(message.replyToUserId), message.replyToUserName),
+                        UserId(message.senderUserId))
                 else
                     assignInteractor.assignNegative(
-                        ChatId(message.chatId), UserId(message.senderUserId), UserId(message.replyToUserId))
+                        ChatId(message.chatId), User(UserId(message.replyToUserId), message.replyToUserName),
+                        UserId(message.senderUserId))
             } catch (e: AssignCreditException) {
                 // TODO: Logging
                 println("Failed to assign credits")
@@ -153,32 +164,4 @@ suspend fun main(vararg args: String) {
             }
         }
     }.join()
-
-//    bot.longPolling(scope = scope) {
-//        messageFlow.onEach {
-//            safely({ e ->
-//                // TODO: Logging
-//                println("Unhandled exception")
-//                e.printStackTrace()
-//            }) {
-//                val message = filterMessage(it.data) ?: return@safely
-//                try {
-//                    if (message.isPositive)
-//                        assignInteractor.assignPositive(
-//                            ChatId(message.chatId), UserId(message.senderUserId), UserId(message.replyToUserId)
-//                        )
-//                    else
-//                        assignInteractor.assignNegative(
-//                            ChatId(message.chatId), UserId(message.senderUserId), UserId(message.replyToUserId))
-//                } catch (e: AssignCreditException) {
-//                    // TODO: Logging
-//                    println("Failed to assign credits")
-//                    e.printStackTrace()
-//                    bot.reply(it.data, MESSAGE_ERROR)
-//                }
-//            }
-//        }.launchIn(scope)
-//    }
-//
-//    scope.coroutineContext[Job]!!.join()
 }

@@ -1,10 +1,21 @@
 package data.repository.db
 
 import org.jetbrains.exposed.sql.Column
+import org.jetbrains.exposed.sql.Index
 import org.jetbrains.exposed.sql.Table
+import org.jetbrains.exposed.sql.Transaction
+import org.jetbrains.exposed.sql.statements.InsertStatement
+import org.jetbrains.exposed.sql.transactions.TransactionManager
+
+object UserNames: Table() {
+    val userId = long("user_id").uniqueIndex()
+    val name = varchar("name", length = 100)
+
+    override val primaryKey = PrimaryKey(userId)
+}
 
 object CreditAssignments: Table() {
-    val chat: Column<Long> = long("chat")
-    val assignee: Column<Long> = long("assignee")
-    val value: Column<Int> = integer("value")
+    val chat = long("chat")
+    val assignee = long("assignee").references(UserNames.userId)
+    val value= integer("value")
 }
