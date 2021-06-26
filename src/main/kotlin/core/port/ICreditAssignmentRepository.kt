@@ -6,9 +6,9 @@ import core.domain.UserId
 
 interface ICreditAssignmentRepository {
 
-    @Throws(CreditAssignmentRepoException::class)
+    @Throws(CreditAssignmentRepositoryException::class)
     fun addAssignment(assignment: CreditAssignment)
 
-    @Throws(CreditAssignmentRepoException::class)
+    @Throws(CreditAssignmentRepositoryException::class)
     fun getChatAssignments(chatId: ChatId): Map<UserId, ChatId>
 }

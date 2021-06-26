@@ -7,7 +7,10 @@ plugins {
 
 group = "ru.timeescaper"
 version = "0.1.0-SNAPSHOT"
+
+// TODO: Move to gradle.properties
 val telegrambotapiVersion = "0.35.0"
+val exposedVersion = "0.31.1"
 
 repositories {
     jcenter()
@@ -21,6 +24,10 @@ dependencies {
     implementation("dev.inmo:tgbotapi.extensions.api:$telegrambotapiVersion")
     implementation("dev.inmo:tgbotapi.extensions.utils:$telegrambotapiVersion")
     implementation("dev.inmo:tgbotapi.extensions.behaviour_builder:$telegrambotapiVersion")
+    implementation("org.jetbrains.exposed:exposed-core:$exposedVersion")
+    implementation("org.jetbrains.exposed:exposed-dao:$exposedVersion")
+    implementation("org.jetbrains.exposed:exposed-jdbc:$exposedVersion")
+    implementation("org.xerial:sqlite-jdbc:3.30.1")
 }
 
 tasks.test {
@@ -32,5 +39,5 @@ tasks.withType<KotlinCompile>() {
 }
 
 application {
-    mainClassName = "ServerKt"
+    mainClassName = "BotKt"
 }

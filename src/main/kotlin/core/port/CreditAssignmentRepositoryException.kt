@@ -1,6 +1,6 @@
 package core.port
 
-class CreditAssignmentRepoException: RuntimeException {
+class CreditAssignmentRepositoryException: RuntimeException {
 
     constructor() : super()
 
