@@ -2,13 +2,12 @@ package data.repository
 
 import core.domain.ChatId
 import core.domain.CreditAssignment
+import core.domain.CreditValue
 import core.domain.UserId
 import core.port.CreditAssignmentRepositoryException
 import core.port.ICreditAssignmentRepository
 import data.repository.db.CreditAssignments
-import org.jetbrains.exposed.sql.Database
-import org.jetbrains.exposed.sql.SchemaUtils
-import org.jetbrains.exposed.sql.insert
+import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.TransactionManager
 import org.jetbrains.exposed.sql.transactions.transaction
 import java.sql.Connection
@@ -40,7 +39,20 @@ class SQLiteAssignmentRepository(dbPath: String): ICreditAssignmentRepository {
         }
     }
 
-    override fun getChatAssignments(chatId: ChatId): Map<UserId, ChatId> {
-        TODO("Not yet implemented")
+    override fun getChatAssignments(chatId: ChatId): Map<UserId, CreditValue> {
+        try {
+             return transaction {
+                CreditAssignments
+                    .slice(CreditAssignments.value.sum(), CreditAssignments.assignee)
+                    .select { CreditAssignments.chat eq chatId.id }
+                    .groupBy(CreditAssignments.assignee)
+                    .associate { row ->
+                        UserId(row[CreditAssignments.assignee]) to
+                                CreditValue(row[CreditAssignments.value.sum()] ?: 0)
+                    }
+            }
+        } catch (e: Exception) {
+            throw CreditAssignmentRepositoryException("Failed to execute query", e)
+        }
     }
 }

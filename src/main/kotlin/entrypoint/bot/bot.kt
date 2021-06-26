@@ -4,20 +4,21 @@ import core.domain.ChatId
 import core.domain.UserId
 import core.usecase.AssignCreditException
 import core.usecase.AssignCreditInteractor
+import core.usecase.RetrieveCreditsException
+import core.usecase.RetrieveCreditsInteractor
 import data.repository.SQLiteAssignmentRepository
-import dev.inmo.micro_utils.coroutines.safely
 import dev.inmo.tgbotapi.bot.Ktor.telegramBot
-import dev.inmo.tgbotapi.extensions.utils.updates.retrieving.longPolling
 import dev.inmo.tgbotapi.types.chat.abstracts.GroupChat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.onEach
 import dev.inmo.tgbotapi.extensions.api.send.reply
+import dev.inmo.tgbotapi.extensions.behaviour_builder.buildBehaviour
+import dev.inmo.tgbotapi.extensions.behaviour_builder.triggers_handling.onCommand
+import dev.inmo.tgbotapi.extensions.behaviour_builder.triggers_handling.onContentMessage
 import dev.inmo.tgbotapi.extensions.utils.*
+import dev.inmo.tgbotapi.types.message.abstracts.FromUserMessage
 import dev.inmo.tgbotapi.types.message.abstracts.Message
 import dev.inmo.tgbotapi.types.message.content.media.StickerContent
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.launchIn
 
 private const val ARG_TOKEN = "--token"
 private const val ARG_DB_PATH = "--db-path"
@@ -27,7 +28,13 @@ private const val STICKER_PACK_NAME = "PoohSocialCredit"
 private const val STICKER_PLUS_20 = "AgADAgADf3BGHA"
 private const val STICKER_MINUS_20 = "AgADAwADf3BGHA"
 
-private const val MESSAGE_ERROR = "Something went wrong, credits not assigned!"
+private const val MESSAGE_ASSIGN_ERROR = "Something went wrong, credits not assigned!"
+private const val MESSAGE_RETRIEVE_ERROR = "Something went wrong, can not obtain info!"
+private const val MESSAGE_HEALTHCHECK = "Status: OK"
+private const val MESSAGE_NO_DATA = "Seems that there were not any credit assignments in this chat after adding the bot!"
+
+private const val COMMAND_GET_CREDITS = "credits"
+private const val COMMAND_HEALTHCHECK = "healthcheck"
 
 data class FilteredMessage(val chatId: Long, val senderUserId: Long, val replyToUserId: Long, val isPositive: Boolean)
 
@@ -52,16 +59,19 @@ fun parseArgs(args: Array<out String>): Pair<String, String> {
     return token to dbPath
 }
 
-fun filterMessage(message: Message): FilteredMessage? {
+fun checkGroupAndHumanMessage(message: Message): FromUserMessage? {
     // Check if message is not from group chat
     if (message.chat !is GroupChat)
         return null
-
-    // Try to obtain group message with content and as user (not bot) message
-    val groupMessage = message.asGroupContentMessage() ?: return null
     val userMessage = message.asFromUserMessage() ?: return null
     if (userMessage.user.asBot() != null)
         return null
+    return userMessage
+}
+
+fun filterCreditAssignMessage(message: Message): FilteredMessage? {
+    val userMessage = checkGroupAndHumanMessage(message) ?: return null
+    val groupMessage = message.asGroupContentMessage() ?: return null
     val senderUserId = userMessage.user.id.chatId
 
     // Check if the message is the reply and reply not to bot
@@ -90,38 +100,85 @@ fun filterMessage(message: Message): FilteredMessage? {
 suspend fun main(vararg args: String) {
     val (botToken, dbPath) = parseArgs(args)
 
-    val assignInteractor = AssignCreditInteractor(SQLiteAssignmentRepository(dbPath))
-    assignInteractor.assignPositive(ChatId(0), UserId(0), UserId(1))
+    val repo = SQLiteAssignmentRepository(dbPath)
+    val assignInteractor = AssignCreditInteractor(repo)
+    val retrieveInteractor = RetrieveCreditsInteractor(repo)
 
     val bot = telegramBot(botToken)
 
     val scope = CoroutineScope(Dispatchers.Default)
 
-    bot.longPolling(scope = scope) {
-        messageFlow.onEach {
-            safely({ e ->
+    bot.buildBehaviour(scope) {
+        onCommand(COMMAND_GET_CREDITS.toRegex()) { message ->
+            checkGroupAndHumanMessage(message) ?: return@onCommand
+            val chatId = message.chat.id.chatId
+            val credits = try {
+                retrieveInteractor.retrieveTotalCredits(ChatId(chatId))
+            } catch (e: RetrieveCreditsException) {
                 // TODO: Logging
-                println("Unhandled exception")
+                println("Failed to retrieve credits")
                 e.printStackTrace()
-            }) {
-                val message = filterMessage(it.data) ?: return@safely
-                try {
-                    if (message.isPositive)
-                        assignInteractor.assignPositive(
-                            ChatId(message.chatId), UserId(message.senderUserId), UserId(message.replyToUserId)
-                        )
-                    else
-                        assignInteractor.assignNegative(
-                            ChatId(message.chatId), UserId(message.senderUserId), UserId(message.replyToUserId))
-                } catch (e: AssignCreditException) {
-                    // TODO: Logging
-                    println("Failed to assign credits")
-                    e.printStackTrace()
-                    bot.reply(it.data, MESSAGE_ERROR)
-                }
+                bot.reply(message, MESSAGE_RETRIEVE_ERROR)
+                return@onCommand
             }
-        }.launchIn(scope)
-    }
+            if (credits.isEmpty()) {
+                bot.reply(message, MESSAGE_NO_DATA)
+                return@onCommand
+            }
+            val responseMessage = credits.map { "${it.key.id}: ${it.value.value} credits" }.joinToString("\n")
+            bot.reply(message, responseMessage)
+        }
+        onCommand(COMMAND_HEALTHCHECK.toRegex()) { message ->
+            bot.reply(message, MESSAGE_HEALTHCHECK)
+        }
+        onContentMessage {
+            val message = filterCreditAssignMessage(it) ?: return@onContentMessage
+            val responseMessage = try {
+                if (message.isPositive)
+                    assignInteractor.assignPositive(
+                        ChatId(message.chatId), UserId(message.senderUserId), UserId(message.replyToUserId)
+                    )
+                else
+                    assignInteractor.assignNegative(
+                        ChatId(message.chatId), UserId(message.senderUserId), UserId(message.replyToUserId))
+            } catch (e: AssignCreditException) {
+                // TODO: Logging
+                println("Failed to assign credits")
+                e.printStackTrace()
+                bot.reply(it, MESSAGE_ASSIGN_ERROR)
+                return@onContentMessage
+            }
+            if (responseMessage != null) {
+                bot.reply(it, responseMessage.text)
+            }
+        }
+    }.join()
 
-    scope.coroutineContext[Job]!!.join()
+//    bot.longPolling(scope = scope) {
+//        messageFlow.onEach {
+//            safely({ e ->
+//                // TODO: Logging
+//                println("Unhandled exception")
+//                e.printStackTrace()
+//            }) {
+//                val message = filterMessage(it.data) ?: return@safely
+//                try {
+//                    if (message.isPositive)
+//                        assignInteractor.assignPositive(
+//                            ChatId(message.chatId), UserId(message.senderUserId), UserId(message.replyToUserId)
+//                        )
+//                    else
+//                        assignInteractor.assignNegative(
+//                            ChatId(message.chatId), UserId(message.senderUserId), UserId(message.replyToUserId))
+//                } catch (e: AssignCreditException) {
+//                    // TODO: Logging
+//                    println("Failed to assign credits")
+//                    e.printStackTrace()
+//                    bot.reply(it.data, MESSAGE_ERROR)
+//                }
+//            }
+//        }.launchIn(scope)
+//    }
+//
+//    scope.coroutineContext[Job]!!.join()
 }

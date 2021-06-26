@@ -2,6 +2,7 @@ package core.port
 
 import core.domain.ChatId
 import core.domain.CreditAssignment
+import core.domain.CreditValue
 import core.domain.UserId
 
 interface ICreditAssignmentRepository {
@@ -10,5 +11,5 @@ interface ICreditAssignmentRepository {
     fun addAssignment(assignment: CreditAssignment)
 
     @Throws(CreditAssignmentRepositoryException::class)
-    fun getChatAssignments(chatId: ChatId): Map<UserId, ChatId>
+    fun getChatAssignments(chatId: ChatId): Map<UserId, CreditValue>
 }
