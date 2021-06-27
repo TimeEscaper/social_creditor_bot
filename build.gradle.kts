@@ -41,5 +41,21 @@ tasks.withType<KotlinCompile>() {
 }
 
 application {
-    mainClassName = "BotKt"
+    mainClassName = "entrypoint.bot.BotKt"
+}
+
+// https://stackoverflow.com/questions/56921833/kotlin-program-error-no-main-manifest-attribute-in-jar-file/61373175#61373175
+// https://gist.github.com/domnikl/c19c7385927a7bef7217aa036a71d807
+val jar by tasks.getting(Jar::class) {
+    manifest {
+        attributes["Main-Class"] = "entrypoint.bot.BotKt"
+    }
+
+    // To add all of the dependencies otherwise a "NoClassDefFoundError" error
+    from(sourceSets.main.get().output)
+
+    dependsOn(configurations.runtimeClasspath)
+    from({
+        configurations.runtimeClasspath.get().filter { it.name.endsWith("jar") }.map { zipTree(it) }
+    })
 }
