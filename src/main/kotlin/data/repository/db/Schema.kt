@@ -14,8 +14,11 @@ object UserNames: Table() {
     override val primaryKey = PrimaryKey(userId)
 }
 
-object CreditAssignments: Table() {
+object Credits: Table() {
     val chat = long("chat")
     val assignee = long("assignee").references(UserNames.userId)
     val value= integer("value")
+
+    val chatAssigneeUnique = uniqueIndexR("chat_assignee_unique_idx", chat, assignee)
+    override val primaryKey = PrimaryKey(chat, assignee)
 }

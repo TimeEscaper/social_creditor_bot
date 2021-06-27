@@ -41,7 +41,7 @@ class UpsertStatement<Key : Any>(table: Table, conflictColumn: Column<*>? = null
 
 }
 
-inline fun <T : Table> T.upsert(conflictColumn: Column<*>? = null, conflictIndex: Index? = null, body: T.(UpsertStatement<Number>) -> Unit) =
+inline fun <T : Table> T.upsert1(conflictColumn: Column<*>? = null, conflictIndex: Index? = null, body: T.(UpsertStatement<Number>) -> Unit) =
     UpsertStatement<Number>(this, conflictColumn, conflictIndex).apply {
         body(this)
         execute(TransactionManager.current())

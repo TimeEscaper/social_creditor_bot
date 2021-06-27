@@ -3,9 +3,9 @@ package data.repository
 import core.domain.*
 import core.port.CreditAssignmentRepositoryException
 import core.port.ICreditAssignmentRepository
-import data.repository.db.CreditAssignments
+import data.repository.db.Credits
 import data.repository.db.UserNames
-import data.repository.db.upsert
+import net.dzikoysk.exposed.upsert.upsert
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.transactions.TransactionManager
 import org.jetbrains.exposed.sql.transactions.transaction
@@ -21,7 +21,7 @@ class SQLiteAssignmentRepository(dbPath: String): ICreditAssignmentRepository {
         dbConnection.useNestedTransactions = true
         transaction {
             SchemaUtils.create(UserNames)
-            SchemaUtils.create(CreditAssignments)
+            SchemaUtils.create(Credits)
         }
     }
 
@@ -29,15 +29,23 @@ class SQLiteAssignmentRepository(dbPath: String): ICreditAssignmentRepository {
         try {
             transaction {
                 // TODO: Store usernames more efficiently
-                UserNames.upsert(UserNames.userId) {
+                UserNames.upsert(UserNames.userId, insertBody = {
                     it[userId] = assignment.assignee.userId.id
                     it[name] = assignment.assignee.name
-                }
-                CreditAssignments.insert {
+                }, updateBody = {
+                    with(SqlExpressionBuilder) {
+                        it.update(name, name.apply { assignment.assignee.name })
+                    }
+                })
+                Credits.upsert(conflictIndex = Credits.chatAssigneeUnique, insertBody = {
                     it[chat] = assignment.chatId.id
                     it[assignee] = assignment.assignee.userId.id
                     it[value] = assignment.value.value
-                }
+                }, updateBody = {
+                    with(SqlExpressionBuilder) {
+                        it.update(value, value + assignment.value.value)
+                    }
+                })
             }
         } catch (e: Exception) {
             throw CreditAssignmentRepositoryException("Failed to execute transaction", e)
@@ -47,22 +55,14 @@ class SQLiteAssignmentRepository(dbPath: String): ICreditAssignmentRepository {
     override fun getChatTotalCredits(chatId: ChatId): Map<User, CreditValue> {
         try {
              return transaction {
-                (CreditAssignments innerJoin UserNames)
-                    .slice(CreditAssignments.value.sum(), CreditAssignments.assignee, UserNames.name)
-                    .select { CreditAssignments.chat eq chatId.id }
-                    .groupBy(CreditAssignments.assignee)
+                (Credits innerJoin UserNames)
+                    .slice(Credits.value, Credits.assignee, UserNames.name)
+                    .select { Credits.chat eq chatId.id }
+                    .groupBy(Credits.assignee)
                     .associate { row ->
-                        User(UserId(row[CreditAssignments.assignee]), row[UserNames.name]) to
-                                CreditValue(row[CreditAssignments.value.sum()] ?: 0)
+                        User(UserId(row[Credits.assignee]), row[UserNames.name]) to
+                                CreditValue(row[Credits.value])
                     }
-//                CreditAssignments
-//                    .slice(CreditAssignments.value.sum(), CreditAssignments.assignee)
-//                    .select { CreditAssignments.chat eq chatId.id }
-//                    .groupBy(CreditAssignments.assignee)
-//                    .associate { row ->
-//                        UserId(row[CreditAssignments.assignee]) to
-//                                CreditValue(row[CreditAssignments.value.sum()] ?: 0)
-//                    }
             }
         } catch (e: Exception) {
             throw CreditAssignmentRepositoryException("Failed to execute query", e)
